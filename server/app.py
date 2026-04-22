@@ -22,7 +22,10 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
 migrate = Migrate(app, db)
-#testing route
+
+
+# ── Workouts ────────────────────────────────────────────────────────────────
+
 @app.route('/workouts', methods=['GET'])
 def get_workouts():
     workouts = Workout.query.all()
@@ -31,7 +34,8 @@ def get_workouts():
 
 @app.route('/workouts/<int:id>', methods=['GET'])
 def get_workout_by_id(id):
-    workout = Workout.query.get(id)
+    # FIX: .query.get() is deprecated in SQLAlchemy 2.0 — use .session.get() instead
+    workout = db.session.get(Workout, id)
 
     if not workout:
         return make_response(jsonify({"error": "Workout not found"}), 404)
@@ -62,9 +66,39 @@ def create_workout():
         return make_response(jsonify({"error": str(err)}), 400)
 
 
+# FIX: Added missing PATCH route so workouts can be updated
+@app.route('/workouts/<int:id>', methods=['PATCH'])
+def update_workout(id):
+    workout = db.session.get(Workout, id)
+
+    if not workout:
+        return make_response(jsonify({"error": "Workout not found"}), 404)
+
+    try:
+        # partial=True allows sending only the fields you want to update
+        data = workout_schema.load(request.get_json(), partial=True)
+
+        if 'date' in data:
+            workout.date = data['date']
+        if 'duration_minutes' in data:
+            workout.duration_minutes = data['duration_minutes']
+        if 'notes' in data:
+            workout.notes = data['notes']
+
+        db.session.commit()
+
+        return make_response(jsonify(workout_schema.dump(workout)), 200)
+
+    except ValidationError as err:
+        return make_response(jsonify({"errors": err.messages}), 400)
+
+    except ValueError as err:
+        return make_response(jsonify({"error": str(err)}), 400)
+
+
 @app.route('/workouts/<int:id>', methods=['DELETE'])
 def delete_workout(id):
-    workout = Workout.query.get(id)
+    workout = db.session.get(Workout, id)  # FIX: deprecated .query.get()
 
     if not workout:
         return make_response(jsonify({"error": "Workout not found"}), 404)
@@ -75,6 +109,7 @@ def delete_workout(id):
     return make_response(jsonify({"message": f"Workout {id} deleted successfully"}), 200)
 
 
+# ── Exercises ────────────────────────────────────────────────────────────────
 
 @app.route('/exercises', methods=['GET'])
 def get_exercises():
@@ -84,7 +119,7 @@ def get_exercises():
 
 @app.route('/exercises/<int:id>', methods=['GET'])
 def get_exercise_by_id(id):
-    exercise = Exercise.query.get(id)
+    exercise = db.session.get(Exercise, id)  # FIX: deprecated .query.get()
 
     if not exercise:
         return make_response(jsonify({"error": "Exercise not found"}), 404)
@@ -114,10 +149,39 @@ def create_exercise():
     except ValueError as err:
         return make_response(jsonify({"error": str(err)}), 400)
 
-    
+
+# FIX: Added missing PATCH route so exercises can be updated
+@app.route('/exercises/<int:id>', methods=['PATCH'])
+def update_exercise(id):
+    exercise = db.session.get(Exercise, id)
+
+    if not exercise:
+        return make_response(jsonify({"error": "Exercise not found"}), 404)
+
+    try:
+        data = exercise_schema.load(request.get_json(), partial=True)
+
+        if 'name' in data:
+            exercise.name = data['name']
+        if 'category' in data:
+            exercise.category = data['category']
+        if 'equipment_needed' in data:
+            exercise.equipment_needed = data['equipment_needed']
+
+        db.session.commit()
+
+        return make_response(jsonify(exercise_schema.dump(exercise)), 200)
+
+    except ValidationError as err:
+        return make_response(jsonify({"errors": err.messages}), 400)
+
+    except ValueError as err:
+        return make_response(jsonify({"error": str(err)}), 400)
+
+
 @app.route('/exercises/<int:id>', methods=['DELETE'])
 def delete_exercise(id):
-    exercise = Exercise.query.get(id)
+    exercise = db.session.get(Exercise, id)  # FIX: deprecated .query.get()
 
     if not exercise:
         return make_response(jsonify({"error": "Exercise not found"}), 404)
@@ -128,11 +192,12 @@ def delete_exercise(id):
     return make_response(jsonify({"message": f"Exercise {id} deleted successfully"}), 200)
 
 
+# ── WorkoutExercises ─────────────────────────────────────────────────────────
 
 @app.route('/workouts/<int:workout_id>/exercises/<int:exercise_id>/workout_exercises', methods=['POST'])
 def add_exercise_to_workout(workout_id, exercise_id):
-    workout = Workout.query.get(workout_id)
-    exercise = Exercise.query.get(exercise_id)
+    workout = db.session.get(Workout, workout_id)    # FIX: deprecated .query.get()
+    exercise = db.session.get(Exercise, exercise_id)  # FIX: deprecated .query.get()
 
     if not workout:
         return make_response(jsonify({"error": "Workout not found"}), 404)
@@ -143,7 +208,7 @@ def add_exercise_to_workout(workout_id, exercise_id):
     try:
         incoming_data = request.get_json() or {}
 
-        # Add the route parameters into the payload before schema validation
+        # Inject route parameters into the payload before schema validation
         incoming_data['workout_id'] = workout_id
         incoming_data['exercise_id'] = exercise_id
 
@@ -173,7 +238,5 @@ def add_exercise_to_workout(workout_id, exercise_id):
         return make_response(jsonify({"error": str(err)}), 400)
 
 
-
-
 if __name__ == '__main__':
-    app.run(port =5555, debug=True)
+    app.run(port=5555, debug=True)

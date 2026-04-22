@@ -27,11 +27,23 @@ class ExerciseSchema(Schema):
             data['category'] = data['category'].strip().lower()
         return data
 
-    # Extra validation for blank names
     @validates('name')
     def validate_name_not_blank(self, value):
         if not value.strip():
             raise ValidationError("Exercise name cannot be blank or spaces only.")
+
+
+# FIX: Forward-declare a lightweight schema for nesting WorkoutExercise inside
+# WorkoutSchema without creating a circular reference. It omits the heavy
+# back-references (workout_id is redundant when already inside a workout).
+class WorkoutExerciseSummarySchema(Schema):
+    id = fields.Int(dump_only=True)
+    exercise_id = fields.Int(dump_only=True)
+    reps = fields.Int(allow_none=True)
+    sets = fields.Int(allow_none=True)
+    duration_seconds = fields.Int(allow_none=True)
+    # Nest the exercise name/category for convenience
+    exercise = fields.Nested(ExerciseSchema, dump_only=True)
 
 
 class WorkoutSchema(Schema):
@@ -39,8 +51,10 @@ class WorkoutSchema(Schema):
     date = fields.Date(required=True)
     duration_minutes = fields.Int(required=True, validate=validate.Range(min=1))
     notes = fields.Str(allow_none=True)
+    # FIX: Added nested workout_exercises so GET /workouts and GET /workouts/<id>
+    # return the full list of exercises attached to each workout.
+    workout_exercises = fields.List(fields.Nested(WorkoutExerciseSummarySchema), dump_only=True)
 
-    # Clean notes before validation
     @pre_load
     def clean_notes_input(self, data, **kwargs):
         if 'notes' in data and isinstance(data['notes'], str):

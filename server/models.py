@@ -10,9 +10,9 @@ db = SQLAlchemy()
 class Exercise(db.Model):
     __tablename__ = 'exercises'
 
-# Table-level rule: exercise name must be longer than 1 character
+    # Table-level rule: exercise name must be longer than 1 character
     __table_args__ = (
-        CheckConstraint("length(name) > 1", name = "check_exercise_name_length"),
+        CheckConstraint("length(name) > 1", name="check_exercise_name_length"),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -23,15 +23,12 @@ class Exercise(db.Model):
     # Relationship to access workouts an exercise is part of through the join table
     workout_exercises = db.relationship('WorkoutExercise', back_populates='exercise', cascade='all, delete-orphan')
 
-# Model-level validation to ensure exercise name is valid and category is one of the allowed categories
     @validates('name')
-    def validate_name(self, key, value): 
-        if not value or len(value) < 2:
-            raise ValueError("Exercise name must be at lease 2 characterslong.")
+    def validate_name(self, key, value):
+        if not value or len(value.strip()) < 2:
+            raise ValueError("Exercise name must be at least 2 characters long.")
         return value.strip()
 
-
-# Model-level validation for category to ensure it is one of the allowed categories    
     @validates('category')
     def validate_category(self, key, value):
         allowed_categories = ['strength', 'cardio', 'mobility', 'flexibility', 'core']
@@ -46,9 +43,9 @@ class Exercise(db.Model):
 class Workout(db.Model):
     __tablename__ = 'workouts'
 
-# Table-level rule: workout duration must be greater than 0
+    # Table-level rule: workout duration must be greater than 0
     __table_args__ = (
-        CheckConstraint("duration_minutes > 0", name = "check_duration_positive"),
+        CheckConstraint("duration_minutes > 0", name="check_duration_positive"),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -59,16 +56,23 @@ class Workout(db.Model):
     # Relationship to access exercises in a workout through the join table
     workout_exercises = db.relationship('WorkoutExercise', back_populates='workout', cascade='all, delete-orphan')
 
-# Model-level validation to ensure workout duration: reject 0 or negative values
     @validates('duration_minutes')
     def validate_duration_minutes(self, key, value):
         if value is None or value <= 0:
-            raise ValueError("Workout duration must be greater than 0. ")
+            raise ValueError("Workout duration must be greater than 0.")
         return value
 
-        
     @validates('date')
     def validate_date(self, key, value):
+        # FIX: SQLAlchemy may pass either a date object or a string depending on
+        # the version and how the value was set. Normalise to a date object first
+        # to avoid a TypeError when comparing with date.today().
+        if isinstance(value, str):
+            try:
+                from datetime import datetime
+                value = datetime.strptime(value, '%Y-%m-%d').date()
+            except ValueError:
+                raise ValueError("Date must be in YYYY-MM-DD format.")
         if value > date.today():
             raise ValueError("Workout date cannot be in the future.")
         return value
@@ -94,31 +98,28 @@ class WorkoutExercise(db.Model):
     workout_id = db.Column(db.Integer, db.ForeignKey('workouts.id'), nullable=False)
     exercise_id = db.Column(db.Integer, db.ForeignKey('exercises.id'), nullable=False)
 
-    # fields to capture exercise details within a workout
+    # Fields to capture exercise details within a workout
     reps = db.Column(db.Integer, nullable=True)
     sets = db.Column(db.Integer, nullable=True)
     duration_seconds = db.Column(db.Integer, nullable=True)
 
-# Relationships to easily access related data
-# Each WorkoutExercise belongs to one Workout
+    # Each WorkoutExercise belongs to one Workout
     workout = db.relationship('Workout', back_populates='workout_exercises')
 
-# Each WorkoutExercise belongs to one exercise
+    # Each WorkoutExercise belongs to one Exercise
     exercise = db.relationship('Exercise', back_populates='workout_exercises')
 
-    # Model-level validation to ensure data integrity
     @validates('reps')
     def validate_reps(self, key, value):
         if value is not None and value <= 0:
             raise ValueError("Reps must be greater than 0.")
         return value
-    
+
     @validates('sets')
     def validate_sets(self, key, value):
         if value is not None and value <= 0:
             raise ValueError("Sets must be greater than 0 if provided.")
         return value
-
 
     @validates('duration_seconds')
     def validate_duration_seconds(self, key, value):
